@@ -2,6 +2,10 @@
 
 (in-package #:matrix-reloaded)
 
+#+sbcl (require :sb-gmp)
+
+(declaim (optimize (speed 3) (debug 0) (space 0) (safety 0)))
+
 (defun equidimensional (a)
   (or (< (array-rank a) 2)
       (apply #'= (array-dimensions a))))
@@ -13,7 +17,7 @@
   `(matrix ,type ,size ,size))
 
 (defun lambda-e-matrix (size &optional (coef 1))
-  (let ((lem (make-array (list size size) :initial-element 0 :element-type 'fixnum)))
+  (let ((lem (make-array (list size size) :initial-element 0 :element-type 'number)))
     (loop :for i :from 0 :below size
           :do (setf (aref lem i i) coef))
     lem))
@@ -43,21 +47,25 @@
                           :sum (* (aref fst i k) (aref snd k j))))))
         prod))))
 
-
+(declaim (ftype (function (matrix fixnum) matrix) matexpt))
 (defun matexpt (mat deg)
   (cond
     ((zerop deg) (lambda-e-matrix (array-dimension mat 1)))
     ((= 1 deg) mat)
-    (t (let ((prevdeg (matexpt mat (ash deg -1))))
+    (t (let ((prevdeg (the matrix (matexpt mat (ash deg -1)))))
          (if (evenp deg)
              (matprod prevdeg prevdeg)
              (matprod mat (matprod prevdeg prevdeg)))))))
 
+(declaim (ftype (function (fixnum fixnum) (simple-vector *)) %base-vect)
+         (inline %base-vect))
 (defun %base-vect (dim pos)
   (let ((res (make-array dim :element-type 'fixnum :initial-element 0)))
     (setf (aref res pos) 1)
     res))
 
+(declaim (ftype (function (fixnum fixnum) list) %base-list)
+         (inline %base-list))
 (defun %base-list (dim pos)
   (let ((res (make-list dim :initial-element 0)))
     (setf (elt res pos) 1)
