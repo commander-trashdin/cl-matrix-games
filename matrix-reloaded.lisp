@@ -33,29 +33,50 @@
           (setf (aref sum i j) (+ (aref fst i j) (aref snd i j))))))
     sum))
 
-(declaim (ftype (function (matrix matrix) matrix) matprod))
-(defun matprod (fst snd)
-  (destructuring-bind (m n) (array-dimensions fst)
-    (destructuring-bind (n1 l) (array-dimensions snd)
-      (assert (and (= n n1)
-                   (eql (array-element-type fst) (array-element-type fst))))
-      (let ((prod (make-array (list m l) :element-type (array-element-type fst))))
-          (loop :for i :from 0 :below m :do
-            (loop :for j :from 0 :below l :do
-              (setf (aref prod i j)
-                    (loop :for k :from 0 :below n
-                          :sum (* (aref fst i k) (aref snd k j))))))
-        prod))))
+(declaim (ftype (function (matrix matrix &optional (or null fixnum) (or null fixnum) (or null fixnum)) matrix) matprod))
+(defun matprod (fst snd &optional d1 d2 d3)
+  (declare (optimize (speed 3) (debug 0) (space 0) (safety 0)))
+  (if d1
+     (let ((prod (make-array (list d1 d3) :element-type (array-element-type fst))))
+        (loop :for i :from 0 :below d1 :do
+          (loop :for j :from 0 :below d3 :do
+            (setf (aref prod i j)
+                  (loop :for k :from 0 :below d2
+                        :sum (the integer (* (the integer (aref fst i k)) (the integer (aref snd k j))))))))
+      prod)
+     (destructuring-bind (m n) (array-dimensions fst)
+       (destructuring-bind (n1 l) (array-dimensions snd)
+         (assert (and (= n n1)
+                      (eql (array-element-type fst) (array-element-type fst))))
+         (let ((prod (make-array (list m l) :element-type (array-element-type fst))))
+             (loop :for i :from 0 :below m :do
+               (loop :for j :from 0 :below l :do
+                 (setf (aref prod i j)
+                       (loop :for k :from 0 :below n
+                             :sum (the integer (* (the integer (aref fst i k)) (the integer (aref snd k j))))))))
+           prod)))))
 
-(declaim (ftype (function (matrix fixnum) matrix) matexpt))
-(defun matexpt (mat deg)
+(declaim (ftype (function (matrix fixnum &optional fixnum) matrix) matexpt))
+(defun matexpt (mat deg &optional dim)
+  (declare (optimize (speed 3) (debug 0) (space 0) (safety 0)))
   (cond
     ((zerop deg) (lambda-e-matrix (array-dimension mat 1)))
     ((= 1 deg) mat)
-    (t (let ((prevdeg (the matrix (matexpt mat (ash deg -1)))))
-         (if (evenp deg)
-             (matprod prevdeg prevdeg)
-             (matprod mat (matprod prevdeg prevdeg)))))))
+    (t (let* ((d (or dim (array-dimension mat 1)))
+              (prevdeg (the matrix (matexpt mat (ash deg -1) d))))
+         (if (logbitp 0 deg)
+             (matprod mat (matprod prevdeg prevdeg d d d) d d d)
+             (matprod prevdeg prevdeg d d d))))))
+
+(declaim (ftype (function (matrix fixnum) matrix) matexpt1))
+(defun matexpt1 (mat deg)
+  (do ((res (lambda-e-matrix (array-dimension mat 1))))
+      ((< deg 1) res)
+      (when (logbitp 0 deg)
+        (setf res (matprod res mat)))
+      (setf mat (the matrix (matprod mat mat))
+            deg (the fixnum (ash deg -1)))))
+
 
 (declaim (ftype (function (fixnum fixnum) (simple-vector *)) %base-vect)
          (inline %base-vect))
@@ -63,6 +84,7 @@
   (let ((res (make-array dim :element-type 'fixnum :initial-element 0)))
     (setf (aref res pos) 1)
     res))
+
 
 (declaim (ftype (function (fixnum fixnum) list) %base-list)
          (inline %base-list))
